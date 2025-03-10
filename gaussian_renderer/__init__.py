@@ -35,7 +35,6 @@ def render(data,
         screenspace_points.retain_grad()
     except:
         pass
-
     # Set up rasterization configuration
     tanfovx = math.tan(data.FoVx * 0.5)
     tanfovy = math.tan(data.FoVy * 0.5)

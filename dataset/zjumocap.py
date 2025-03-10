@@ -74,7 +74,8 @@ class ZJUMoCapDataset(Dataset):
                             'canonical_pose_view1',]
             predict_seq = self.cfg.get('predict_seq', 0)
             predict_seq = predict_seqs[predict_seq]
-            model_files = sorted(glob.glob(os.path.join(subject_dir, predict_seq, '*.npz')))
+            model_path = os.path.join(subject_dir, predict_seq, '*.npz')
+            model_files = sorted(glob.glob(model_path))
             self.model_files = model_files
             frames = list(reversed(range(-len(model_files), 0)))
             if end_frame == 0:
@@ -86,7 +87,8 @@ class ZJUMoCapDataset(Dataset):
             if self.cfg.get('arah_opt', False):
                 model_files = sorted(glob.glob(os.path.join(subject_dir, 'opt_models/*.npz')))
             else:
-                model_files = sorted(glob.glob(os.path.join(subject_dir, 'models/*.npz')))
+                model_path = os.path.join(subject_dir, 'models/*.npz')
+                model_files = sorted(glob.glob(model_path))
             self.model_files = model_files
             frames = list(range(len(model_files)))
             if end_frame == 0:
@@ -159,6 +161,7 @@ class ZJUMoCapDataset(Dataset):
 
     def get_metadata(self):
         data_paths = self.model_files
+        # print(f"called, data paths length: ", len(data_paths))
         data_path = data_paths[0]
 
         cano_data = self.get_cano_smpl_verts(data_path)
