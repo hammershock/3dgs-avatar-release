@@ -192,7 +192,19 @@ def _update_extrinsics(
 def freeview_camera(camera, trans,
                     total_frames=100,
                     rotate_axis='z',
-                    inv_angle=False,):
+                    inv_angle=False,) -> dict:
+    """
+
+    Args:
+        camera: init camera
+        trans: center
+        total_frames:
+        rotate_axis:
+        inv_angle:
+
+    Returns:
+    Camera parameters
+    """
 
     cam_names = [str(cam_name) for cam_name in range(total_frames + 1)]
     all_cam_params = {'all_cam_names': cam_names}

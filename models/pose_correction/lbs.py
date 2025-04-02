@@ -33,7 +33,7 @@ import torch.nn.functional as F
 # TODO: Add argument to choose between python impl and c++/CUDA merged op
 def lbs(betas, pose, v_template, clothed_v_template, shapedirs, posedirs, J_regressor, parents,
         lbs_weights, num_joints=23, dtype=torch.float32):
-    ''' Performs Linear Blend Skinning with the given shape and pose parameters
+    """ Performs Linear Blend Skinning with the given shape and pose parameters
 
         Parameters
         ----------
@@ -72,7 +72,7 @@ def lbs(betas, pose, v_template, clothed_v_template, shapedirs, posedirs, J_regr
             displacements.
         joints: torch.tensor BxJx3
             The joints of the model
-    '''
+    """
 
     batch_size = betas.shape[0]
     device = betas.device

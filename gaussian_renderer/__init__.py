@@ -9,17 +9,19 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
-import torch
 import math
+
+import torch
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+
 
 def render(data,
            iteration,
            scene,
            pipe,
-           bg_color : torch.Tensor,
-           scaling_modifier = 1.0,
-           override_color = None,
+           bg_color: torch.Tensor,
+           scaling_modifier=1.0,
+           override_color=None,
            compute_loss=True,
            return_opacity=False, ):
     """
@@ -77,14 +79,14 @@ def render(data,
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
     rendered_image, radii = rasterizer(
-        means3D = means3D,
-        means2D = means2D,
-        shs = shs,
-        colors_precomp = colors_precomp,
-        opacities = opacity,
-        scales = scales,
-        rotations = rotations,
-        cov3D_precomp = cov3D_precomp)
+        means3D=means3D,
+        means2D=means2D,
+        shs=shs,
+        colors_precomp=colors_precomp,
+        opacities=opacity,
+        scales=scales,
+        rotations=rotations,
+        cov3D_precomp=cov3D_precomp)
 
     opacity_image = None
     if return_opacity:
@@ -99,13 +101,12 @@ def render(data,
             cov3D_precomp=cov3D_precomp)
         opacity_image = opacity_image[:1]
 
-
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
     return {"deformed_gaussian": pc,
             "render": rendered_image,
             "viewspace_points": screenspace_points,
-            "visibility_filter" : radii > 0,
+            "visibility_filter": radii > 0,
             "radii": radii,
             "loss_reg": loss_reg,
             "opacity_render": opacity_image,

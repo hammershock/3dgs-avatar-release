@@ -25,12 +25,15 @@ class Scene:
         :param path: Path to colmap scene main folder.
         """
         self.cfg = cfg
-
         self.save_dir = save_dir
+
         self.gaussians = gaussians
 
+        # load train dataset
         self.train_dataset = load_dataset(cfg.dataset, split='train')
         self.metadata = self.train_dataset.metadata
+
+        # load test dataset
         if cfg.mode == 'train':
             self.test_dataset = load_dataset(cfg.dataset, split='val')
         elif cfg.mode == 'test':
@@ -68,6 +71,7 @@ class Scene:
         return loss_skinning
 
     def save(self, iteration):
+        """save as .ply"""
         point_cloud_path = os.path.join(self.save_dir, "point_cloud/iteration_{}".format(iteration))
         self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
 
@@ -80,7 +84,8 @@ class Scene:
                     iteration), self.save_dir + "/ckpt" + str(iteration) + ".pth")
 
     def load_checkpoint(self, path):
-        (gaussian_params, converter_sd, converter_opt_sd, converter_scd_sd, first_iter) = torch.load(path)
+        res = torch.load(path)
+        (gaussian_params, converter_sd, converter_opt_sd, converter_scd_sd, first_iter) = res
         self.gaussians.restore(gaussian_params, self.cfg.opt)
         self.converter.load_state_dict(converter_sd)
         # self.converter.optimizer.load_state_dict(converter_opt_sd)

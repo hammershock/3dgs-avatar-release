@@ -1,18 +1,21 @@
+from abc import ABC, abstractmethod
+from typing import Dict, Tuple
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import numpy as np
-from scipy.spatial.transform import Rotation
-
-import models
 from .lbs import lbs
+
+
 # from models.network_utils import get_mlp
 
 def get_transforms_02v(Jtr):
     device = Jtr.device
 
     from scipy.spatial.transform import Rotation as R
+
     rot45p = torch.tensor(R.from_euler('z', 45, degrees=True).as_matrix(), dtype=torch.float32, device=device)
     rot45n = torch.tensor(R.from_euler('z', -45, degrees=True).as_matrix(), dtype=torch.float32, device=device)
     # Specify the bone transformations that transform a SMPL A-pose mesh
@@ -28,10 +31,10 @@ def get_transforms_02v(Jtr):
         R_02v_l.append(rot)
         t = Jtr[j_idx]
         if i > 0:
-            parent = chain[i-1]
+            parent = chain[i - 1]
             t_p = Jtr[parent]
             t = torch.matmul(rot, t - t_p)
-            t = t + t_02v_l[i-1]
+            t = t + t_02v_l[i - 1]
 
         t_02v_l.append(t)
 
@@ -40,7 +43,7 @@ def get_transforms_02v(Jtr):
     t_02v_l = t_02v_l - torch.matmul(Jtr[chain], rot.transpose(0, 1))
 
     R_02v_l = F.pad(R_02v_l, (0, 0, 0, 1))  # 4 x 4 x 3
-    t_02v_l = F.pad(t_02v_l, (0, 1), value=1.0)   # 4 x 4
+    t_02v_l = F.pad(t_02v_l, (0, 1), value=1.0)  # 4 x 4
 
     bone_transforms_02v[chain] = torch.cat([R_02v_l, t_02v_l.unsqueeze(-1)], dim=-1)
 
@@ -54,10 +57,10 @@ def get_transforms_02v(Jtr):
         R_02v_r.append(rot)
         t = Jtr[j_idx]
         if i > 0:
-            parent = chain[i-1]
+            parent = chain[i - 1]
             t_p = Jtr[parent]
             t = torch.matmul(rot, t - t_p)
-            t = t + t_02v_r[i-1]
+            t = t + t_02v_r[i - 1]
 
         t_02v_r.append(t)
 
@@ -67,15 +70,30 @@ def get_transforms_02v(Jtr):
     t_02v_r = t_02v_r - torch.matmul(Jtr[chain], rot.transpose(0, 1))
 
     R_02v_r = F.pad(R_02v_r, (0, 0, 0, 1))  # 4 x 3
-    t_02v_r = F.pad(t_02v_r, (0, 1), value=1.0)   # 4 x 4
+    t_02v_r = F.pad(t_02v_r, (0, 1), value=1.0)  # 4 x 4
 
     bone_transforms_02v[chain] = torch.cat([R_02v_r, t_02v_r.unsqueeze(-1)], dim=-1)
 
     return bone_transforms_02v
 
-class NoPoseCorrection(nn.Module):
+
+class BasePoseCorrection(ABC, nn.Module):
+    @abstractmethod
     def __init__(self, config, metadata=None):
-        super(NoPoseCorrection, self).__init__()
+        super().__init__()
+
+    @abstractmethod
+    def forward(self, camera, iteration):
+        pass
+
+    @abstractmethod
+    def regularization(self, out):
+        pass
+
+
+class NoPoseCorrection(BasePoseCorrection):
+    def __init__(self, config, metadata=None):
+        super(NoPoseCorrection, self).__init__(config, metadata)
 
     def forward(self, camera, iteration):
         return camera, {}
@@ -83,25 +101,26 @@ class NoPoseCorrection(nn.Module):
     def regularization(self, out):
         return {}
 
-class PoseCorrection(nn.Module):
-    def __init__(self, config, metadata=None):
-        super(PoseCorrection, self).__init__()
 
+class PoseCorrection(BasePoseCorrection):
+    def __init__(self, config, metadata=None):
+        super(PoseCorrection, self).__init__(config, metadata)
         self.config = config
         self.metadata = metadata
 
-        self.frame_dict = metadata['frame_dict']
+        self.frame_dict: Dict[int, int] = metadata['frame_dict']
+        gender: str = metadata['gender']
 
-        gender = metadata['gender']
-
-        v_template = np.load('body_models/misc/v_templates.npz')[gender]
-        lbs_weights = np.load('body_models/misc/skinning_weights_all.npz')[gender]
-        posedirs = np.load('body_models/misc/posedirs_all.npz')[gender]
+        # load basic smpl parameters
+        v_template = np.load('body_models/misc/v_templates.npz')[gender]  # (6890, 3)
+        lbs_weights = np.load('body_models/misc/skinning_weights_all.npz')[gender]  # (6890, 24)
+        posedirs = np.load('body_models/misc/posedirs_all.npz')[gender]  # (207, 20670)
         posedirs = posedirs.reshape([posedirs.shape[0] * 3, -1]).T
-        shapedirs = np.load('body_models/misc/shapedirs_all.npz')[gender]
-        J_regressor = np.load('body_models/misc/J_regressors.npz')[gender]
-        kintree_table = np.load('body_models/misc/kintree_table.npy')
+        shapedirs = np.load('body_models/misc/shapedirs_all.npz')[gender]  # (6890, 3, 10)
+        J_regressor = np.load('body_models/misc/J_regressors.npz')[gender]  # (24, 6890)
+        kintree_table = np.load('body_models/misc/kintree_table.npy')  # (2, 24)
 
+        # register_buffer
         self.register_buffer('v_template', torch.tensor(v_template, dtype=torch.float32).unsqueeze(0))
         self.register_buffer('posedirs', torch.tensor(posedirs, dtype=torch.float32))
         self.register_buffer('shapedirs', torch.tensor(shapedirs, dtype=torch.float32))
@@ -109,19 +128,39 @@ class PoseCorrection(nn.Module):
         self.register_buffer('lbs_weights', torch.tensor(lbs_weights, dtype=torch.float32))
         self.register_buffer('kintree_table', torch.tensor(kintree_table, dtype=torch.int32))
 
-    def forward_smpl(self, betas, root_orient, pose_body, pose_hand, trans):
+    def _forward_smpl(self, betas, root_orient, pose_body, pose_hand, trans) -> Tuple[torch.Tensor,
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+
+        Args:
+            betas:
+            root_orient:
+            pose_body:
+            pose_hand:
+            trans:
+
+        Returns:
+            rots: (1, 24, 9)
+            Jtrs: (1, 24, 3)
+            bone_transforms:  (24, 4, 4)
+            verts_posed: (1, 6890, 3)
+            v_posed: (1, 6890, 3)
+            Jtrs_posed: (1, 24, 3)
+
+        """
         full_pose = torch.cat([root_orient, pose_body, pose_hand], dim=-1)
-        verts_posed, Jtrs_posed, Jtrs, bone_transforms, _, v_posed, v_shaped, rot_mats = lbs(betas=betas,
-                                                                                             pose=full_pose,
-                                                                                             v_template=self.v_template.clone(),
-                                                                                             clothed_v_template=None,
-                                                                                             shapedirs=self.shapedirs.clone(),
-                                                                                             posedirs=self.posedirs.clone(),
-                                                                                             J_regressor=self.J_regressor.clone(),
-                                                                                             parents=self.kintree_table[
-                                                                                                 0].long(),
-                                                                                             lbs_weights=self.lbs_weights.clone(),
-                                                                                             dtype=torch.float32)
+        res = lbs(betas=betas,
+                  pose=full_pose,
+                  v_template=self.v_template.clone(),
+                  clothed_v_template=None,
+                  shapedirs=self.shapedirs.clone(),
+                  posedirs=self.posedirs.clone(),
+                  J_regressor=self.J_regressor.clone(),
+                  parents=self.kintree_table[0].long(),
+                  lbs_weights=self.lbs_weights.clone(),
+                  dtype=torch.float32)
+
+        verts_posed, Jtrs_posed, Jtrs, bone_transforms, _, v_posed, v_shaped, rot_mats = res
 
         rots = torch.cat([torch.eye(3).reshape(1, 1, 3, 3).to(rot_mats.device), rot_mats[:, 1:]], dim=1)
         rots = rots.reshape(1, -1, 9).contiguous()
@@ -146,7 +185,6 @@ class PoseCorrection(nn.Module):
         Jtrs = Jtrs.contiguous()
 
         verts_posed = verts_posed + trans[None]
-
         return rots, Jtrs, bone_transforms, verts_posed, v_posed, Jtrs_posed
 
     def forward(self, camera, iteration):
@@ -161,33 +199,31 @@ class PoseCorrection(nn.Module):
     def pose_correct(self, camera, iteration):
         raise NotImplementedError
 
+
 class DirectPoseOptimization(PoseCorrection):
     def __init__(self, config, metadata=None):
         super(DirectPoseOptimization, self).__init__(config, metadata)
         self.cfg = config
 
-        root_orient = metadata['root_orient']
-        pose_body = metadata['pose_body']
-        pose_hand = metadata['pose_hand']
-        trans = metadata['trans']
-        betas = metadata['betas']
-        frames = metadata['frames']
-
-        self.frames = frames
+        self.frames = metadata['frames']
 
         # use nn.Embedding
-        root_orient = np.array(root_orient)
-        pose_body = np.array(pose_body)
-        pose_hand = np.array(pose_hand)
-        trans = np.array(trans)
+        # num_frames: N
+        root_orient = np.array(metadata['root_orient'])  # (N, 3)
+        pose_body = np.array(metadata['pose_body'])  # (N, 63)
+        pose_hand = np.array(metadata['pose_hand'])  # (N, 6)
+        trans = np.array(metadata['trans'])  # (N, 3)
+
         self.root_orients = nn.Embedding.from_pretrained(torch.from_numpy(root_orient).float(), freeze=False)
         self.pose_bodys = nn.Embedding.from_pretrained(torch.from_numpy(pose_body).float(), freeze=False)
         self.pose_hands = nn.Embedding.from_pretrained(torch.from_numpy(pose_hand).float(), freeze=False)
         self.trans = nn.Embedding.from_pretrained(torch.from_numpy(trans).float(), freeze=False)
 
+        betas = metadata['betas']  # (1, 10)
         self.register_parameter('betas', nn.Parameter(torch.tensor(betas, dtype=torch.float32)))
 
     def pose_correct(self, camera, iteration):
+        """ forward pose correction """
         if iteration < self.cfg.get('delay', 0):
             return camera, {}
 
@@ -195,28 +231,25 @@ class DirectPoseOptimization(PoseCorrection):
 
         # use nn.Embedding
         idx = torch.Tensor([self.frame_dict[frame]]).long().to(self.betas.device)
+
+        betas = self.betas
         root_orient = self.root_orients(idx)
         pose_body = self.pose_bodys(idx)
         pose_hand = self.pose_hands(idx)
         trans = self.trans(idx)
 
-        betas = self.betas
 
         # compose rots, Jtrs, bone_transforms, posed_smpl_verts
-        rots, Jtrs, bone_transforms, posed_smpl_verts, _, _ = self.forward_smpl(betas, root_orient, pose_body, pose_hand, trans)
+        res = self._forward_smpl(betas, root_orient, pose_body, pose_hand, trans)
+
+        rots, Jtrs, bone_transforms, posed_smpl_verts, _, _ = res
 
         rots_diff = camera.rots - rots
         updated_camera = camera.copy()
-        updated_camera.update(
-            rots=rots,
-            Jtrs=Jtrs,
-            bone_transforms=bone_transforms,
-        )
+        updated_camera.update(rots=rots, Jtrs=Jtrs, bone_transforms=bone_transforms)
 
         loss_pose = (rots_diff ** 2).mean()
-        return updated_camera, {
-            'pose': loss_pose,
-        }
+        return updated_camera, {'pose': loss_pose,}
 
     def regularization(self, out):
         loss = (out['rots_diff'] ** 2).mean()
@@ -233,8 +266,9 @@ class DirectPoseOptimization(PoseCorrection):
 
         betas = self.betas
 
-        rots, Jtrs, bone_transforms, posed_smpl_verts, v_posed, Jtr_posed = self.forward_smpl(betas, root_orient, pose_body,
-                                                                                pose_hand, trans)
+        rots, Jtrs, bone_transforms, posed_smpl_verts, v_posed, Jtr_posed = self._forward_smpl(betas, root_orient,
+                                                                                               pose_body,
+                                                                                               pose_hand, trans)
         model_dict.update({
             'minimal_shape': v_posed[0],
             'betas': betas,
@@ -248,6 +282,7 @@ class DirectPoseOptimization(PoseCorrection):
         for k, v in model_dict.items():
             model_dict.update({k: v.detach().cpu().numpy()})
         return model_dict
+
 
 def get_pose_correction(cfg, metadata):
     name = cfg.name
