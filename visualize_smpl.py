@@ -10,75 +10,38 @@ from scipy.spatial.transform import Rotation
 
 matplotlib.use('tkAgg')
 
+rot45p = Rotation.from_euler('z', 45, degrees=True).as_matrix()
+rot45n = Rotation.from_euler('z', -45, degrees=True).as_matrix()
 
-indices = np.array([
-    23,  # Pelvis
-    23,  # Left Hip
-    24,  # Right Hip
-    11,  # Spine1
-    25,  # Left Knee
-    26,  # Right Knee
-    11,  # Spine2
-    27,  # Left Ankle
-    28,  # Right Ankle
-    11,  # Spine3
-    31,  # Left Foot
-    32,  # Right Foot
-    12,  # Neck
-    11,  # Left Collar
-    12,  # Right Collar
-    0,   # Head
-    11,  # Left Shoulder
-    12,  # Right Shoulder
-    13,  # Left Elbow
-    14,  # Right Elbow
-    15,  # Left Wrist
-    16,  # Right Wrist
-    15,  # Left Hand
-    16   # Right Hand
-])
 
 # add ZJUMoCAP dataloader
-def get_02v_bone_transforms(Jtr,):
-    rot45p = Rotation.from_euler('z', 45, degrees=True).as_matrix()
-    rot45n = Rotation.from_euler('z', -45, degrees=True).as_matrix()
+def get_02v_bone_transforms(Joints):
+    """
+    Specify the bone transformations that transform a SMPL A-pose mesh
+    to a star-shaped A-pose (i.e. Vitruvian A-pose)
+    Args:
+        Joints: (24, 3)
+    Returns:
+        transforms: (24, 4, 4)
+    """
+    trans = np.tile(np.eye(4), (24, 1, 1))  # (4, 4) -> (24, 4, 4)
 
-    # Specify the bone transformations that transform a SMPL A-pose mesh
-    # to a star-shaped A-pose (i.e. Vitruvian A-pose)
-    bone_transforms_02v = np.tile(np.eye(4), (24, 1, 1))
+    def rotate(chain, R):
+        for i, joint_idx in enumerate(chain):
+            trans[joint_idx, :3, :3] = R
+            t = Joints[joint_idx].copy()  # current joint
+            if i > 0:
+                parent = chain[i - 1]
+                t_p = Joints[parent].copy()  # parent joint
+                t = R @ (t - t_p)  # t = np.dot(rot, t - t_p)  #
+                t += trans[parent, :3, -1].copy()
+            trans[joint_idx, :3, -1] = t
+        trans[chain, :3, -1] -= np.dot(Joints[chain], R.T)
 
-    # First chain: L-hip (1), L-knee (4), L-ankle (7), L-foot (10)  # 左腿
-    chain = [1, 4, 7, 10]
-    rot = rot45p.copy()
-    for i, j_idx in enumerate(chain):
-        bone_transforms_02v[j_idx, :3, :3] = rot
-        t = Jtr[j_idx].copy()
-        if i > 0:
-            parent = chain[i-1]
-            t_p = Jtr[parent].copy()
-            t = np.dot(rot, t - t_p)
-            t += bone_transforms_02v[parent, :3, -1].copy()
+    rotate([1, 4, 7, 10], rot45p)  # First chain: L-hip (1), L-knee (4), L-ankle (7), L-foot (10)
+    rotate([2, 5, 8, 11], rot45n)  # Second chain: R-hip (2), R-knee (5), R-ankle (8), R-foot (11)
 
-        bone_transforms_02v[j_idx, :3, -1] = t
-
-    bone_transforms_02v[chain, :3, -1] -= np.dot(Jtr[chain], rot.T)
-    # Second chain: R-hip (2), R-knee (5), R-ankle (8), R-foot (11)
-    chain = [2, 5, 8, 11]
-    rot = rot45n.copy()
-    for i, j_idx in enumerate(chain):
-        bone_transforms_02v[j_idx, :3, :3] = rot
-        t = Jtr[j_idx].copy()
-        if i > 0:
-            parent = chain[i-1]
-            t_p = Jtr[parent].copy()
-            t = np.dot(rot, t - t_p)
-            t += bone_transforms_02v[parent, :3, -1].copy()
-
-        bone_transforms_02v[j_idx, :3, -1] = t
-
-    bone_transforms_02v[chain, :3, -1] -= np.dot(Jtr[chain], rot.T)
-
-    return bone_transforms_02v
+    return trans
 
 
 def load_smpl(model_path):
@@ -265,7 +228,6 @@ def _get_cano_smpl_verts(minimal_shape, J_regressor, skinning_weights, faces):
 
 
 def bone_transform(skinning_weights, transforms):
-    print(skinning_weights, transforms.shape)
     T = np.matmul(skinning_weights, transforms.reshape([-1, 16])).reshape([-1, 4, 4])  # (6890, 4, 4)
     vertices = np.matmul(T[:, :3, :3], minimal_shape[..., np.newaxis]).squeeze(-1) + T[:, :3, -1]  # (6890, 3)
     return vertices
