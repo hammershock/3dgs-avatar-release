@@ -49,6 +49,7 @@ class ColorMLP(ColorPrecompute):
         self.cano_view_dir = cfg.get('cano_view_dir', False)
         self.non_rigid_dim = cfg.get('non_rigid_dim', 0)
         self.latent_dim = cfg.get('latent_dim', 0)
+        # print("initialized, latent_dim: ", self.latent_dim)
 
         if self.use_xyz:
             d_in += 3

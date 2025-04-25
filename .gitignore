@@ -24,3 +24,13 @@ SIBR_viewers
 /out/
 /test/
 /videos/
+/scene_sequences/
+/bone_transform_02v.npy
+/build_dataset/datasets/
+/build_dataset/runs/
+/build_dataset/seg_data/
+/build_dataset/masks_dance2.npy
+/build_dataset/yolov8n.pt
+/build_dataset/yolov8n-seg.pt
+/build_dataset/yolov8x-seg.pt
+/smpl_data/

@@ -290,4 +290,5 @@ def get_pose_correction(cfg, metadata):
         "none": NoPoseCorrection,
         "direct": DirectPoseOptimization,
     }
+    # print("pose_correction: ", name)
     return model_dict[name](cfg, metadata)

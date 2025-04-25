@@ -289,6 +289,7 @@ class ZJUMoCapDataset(Dataset):
         mask_file = data_dict['mask_file']
         model_file = data_dict['model_file']
 
+        # ZJU-MoCap数据集中相机内外参数
         K = np.array(self.cameras[cam_name]['K'], dtype=np.float32).copy()
         dist = np.array(self.cameras[cam_name]['D'], dtype=np.float32).ravel()
         R = np.array(self.cameras[cam_name]['R'], np.float32)
@@ -296,6 +297,7 @@ class ZJUMoCapDataset(Dataset):
 
         # note that in ZJUMoCap the camera center does not align perfectly
         # here we try to offset it by modifying the extrinsic...
+        # 使用矩阵 M 将偏移吸收进 R 和 T 中，得到无光心偏移的相机参数
         M = np.eye(3)
         M[0, 2] = (K[0, 2] - self.W / 2) / K[0, 0]
         M[1, 2] = (K[1, 2] - self.H / 2) / K[1, 1]
@@ -359,8 +361,7 @@ class ZJUMoCapDataset(Dataset):
 
         pose_mat_full = pose.as_matrix()  # 24 x 3 x 3
         pose_mat = pose_mat_full[1:, ...].copy()  # 23 x 3 x 3
-        pose_rot = np.concatenate([np.expand_dims(np.eye(3), axis=0), pose_mat], axis=0).reshape(
-            [-1, 9])  # 24 x 9, root rotation is set to identity
+        pose_rot = np.concatenate([np.expand_dims(np.eye(3), axis=0), pose_mat], axis=0).reshape([-1, 9])  # 24 x 9, root rotation is set to identity
         pose_rot_full = pose_mat_full.reshape([-1, 9])  # 24 x 9, including root rotation
 
         # Minimally clothed shape
@@ -400,7 +401,7 @@ class ZJUMoCapDataset(Dataset):
             data_device=self.cfg.data_device,
             # human params
             rots=torch.from_numpy(pose_rot).float().unsqueeze(0),
-            Jtrs=torch.from_numpy(Jtr_norm).float().unsqueeze(0),
+            Jtrs=torch.from_numpy(Jtr_norm).float().unsqueeze(0),  # metadata
             bone_transforms=torch.from_numpy(bone_transforms),
         )
 

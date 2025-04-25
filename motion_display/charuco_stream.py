@@ -1,11 +1,13 @@
 import math
 import warnings
+from typing import Optional
 
 import cv2
 import numpy as np
 import torch
 
-from .camera_stream import CameraStream
+from motion_display import CameraStream
+
 
 
 def estimatePoseGridBoard(corners, ids, board, cameraMatrix, distCoeffs):
@@ -38,11 +40,17 @@ class ChArucoStream(CameraStream):
     grid_board = cv2.aruco.GridBoard((GRID_COLS, GRID_ROWS), MARKER_LENGTH, MARKER_SEPARATION, aruco_dict)
 
     @property
-    def R(self):
+    def R(self) -> Optional[np.ndarray]:
         if self.rvec is None:
             return None
         R, _ = cv2.Rodrigues(self.rvec)
         return R
+
+    @property
+    def T(self) -> Optional[np.ndarray]:
+        if self.tvec is None:
+            return None
+        return self.tvec.flatten()
 
     @property
     def world_view_transform(self):

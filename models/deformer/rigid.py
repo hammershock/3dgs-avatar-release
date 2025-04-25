@@ -213,8 +213,7 @@ class SkinningField(RigidDeform):
 
 
     def forward(self, gaussians, iteration, camera):
-        tfs = camera.bone_transforms
-
+        tfs = camera.bone_transforms  # bone_transforms(24, 4, 4)
         xyz = gaussians.get_xyz
         n_pts = xyz.shape[0]
         xyz_norm = self.aabb.normalize(xyz, sym=True)

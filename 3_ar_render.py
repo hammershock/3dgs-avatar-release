@@ -41,7 +41,7 @@ def main(config):
 
         # load Scene
         scene = DuckDuckScene(config, gaussian_model)
-        scene.load_checkpoint("./exp/zju_386_mono-direct-mlp_field-ingp-shallow_mlp-default/ckpt15000.pth")
+        scene.load_checkpoint("./exp/zju_001_mono-direct-mlp_field-ingp-shallow_mlp-default/ckpt15000.pth")
         # scene.load_checkpoint("./exp/zju_377_mono-direct-mlp_field-ingp-shallow_mlp-default/ckpt15000.pth")
         scene.eval()
         # background color

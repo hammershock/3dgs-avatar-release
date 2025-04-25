@@ -26,24 +26,20 @@ from gaussian_renderer import render
 from scene import Scene, GaussianModel
 from scene.cameras import Camera
 from utils.general_utils import fix_random, Evaluator, PSEvaluator
+from visualize_smpl import bone_transform
 
 
-def setup_scene(config) -> Scene:
-    """
-    初始化场景、加载模型检查点、设置背景颜色。
-    """
-    # config.model.gaussian  {'use_sh': False, 'sh_degree': 3, 'delay': 1000, 'feature_dim': 32}
-    gaussian_model = GaussianModel(config.model.gaussian)
-    scene = Scene(config, gaussian_model, config.exp_dir)
-    scene.eval()
-
-    load_ckpt = config.get('load_ckpt', None)
-    if load_ckpt is None:
-        load_ckpt = os.path.join(scene.save_dir, f"ckpt{config.opt.iterations}.pth")
-
-    scene.load_checkpoint(load_ckpt)  # load checkpoint
-
-    return scene
+def set_wandb_logger(config):
+    wandb_name = f"{config.name}-{config.suffix}"
+    wandb.init(
+        mode="disabled" if config.wandb_disable else None,
+        name=wandb_name,
+        project="gaussian-splatting-avatar",
+        entity="fast-avatar-hammershock",
+        dir=config.exp_dir,
+        config=OmegaConf.to_container(config, resolve=True),
+        settings=wandb.Settings(start_method='fork'),
+    )
 
 
 def render_and_save(scene, config, render_path, background, evaluator=None):
@@ -51,16 +47,15 @@ def render_and_save(scene, config, render_path, background, evaluator=None):
     iter_end = torch.cuda.Event(enable_timing=True)
 
     times, psnrs, ssims, lpipss = [], [], [], []
-
+    print(config.model.pose_correction)
     for idx in trange(len(scene.test_dataset), desc="Rendering progress"):
         # ========================Render Progress=====================================================
         # start to record time
         camera: Camera = scene.test_dataset[idx]
+
         iter_start.record()
-
-        render_pkg = render(camera, config.opt.iterations, scene, config.pipeline, background,
-                            compute_loss=False, return_opacity=False)
-
+        # TODO: Figure out Core function 'render'
+        render_pkg = render(camera, config.opt.iterations, scene, config.pipeline, background, compute_loss=False, return_opacity=False)
         iter_end.record()
         torch.cuda.synchronize()
         elapsed = iter_start.elapsed_time(iter_end)  # 精确记录渲染在gpu上进行的时间
@@ -124,7 +119,16 @@ def render_and_save(scene, config, render_path, background, evaluator=None):
 
 def predict(config, evaluator=None):
     with torch.no_grad():
-        scene = setup_scene(config)
+        # load Scene
+        gaussian_model = GaussianModel(config.model.gaussian)
+        scene = Scene(config, gaussian_model, config.exp_dir)
+        scene.eval()
+
+        load_ckpt = config.get('load_ckpt', None)
+        if load_ckpt is None:
+            load_ckpt = os.path.join(scene.save_dir, f"ckpt{config.opt.iterations}.pth")
+        print(f"load from ckpt: {load_ckpt}")
+        scene.load_checkpoint(load_ckpt)  # load checkpoint
 
         bg_color = [1, 1, 1] if config.dataset.white_background else [0, 0, 0]  # set up background color
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
@@ -163,24 +167,11 @@ def get_experiment_suffix(config):
     raise ValueError(f"Unknown mode: {config.mode}")
 
 
-def set_wandb_logger(config):
-    wandb_name = f"{config.name}-{config.suffix}"
-    wandb.init(
-        mode="disabled" if config.wandb_disable else None,
-        name=wandb_name,
-        project="gaussian-splatting-avatar",
-        entity="fast-avatar-hammershock",
-        dir=config.exp_dir,
-        config=OmegaConf.to_container(config, resolve=True),
-        settings=wandb.Settings(start_method='fork'),
-    )
-
-
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(config):
     OmegaConf.set_struct(config, False)
     config.wandb_disable = True
-    print(config.dataset.name)  # zjumocap
+    # print("padding", config.padding)  # zjumocap
     config.dataset.preload = False  # 关闭预加载
     # pretrained_path = "models_pretrained/zju_377_mono/ckpt15000.pth"
     # config.load_ckpt = pretrained_path
@@ -192,11 +183,11 @@ def main(config):
     set_wandb_logger(config)
     fix_random(config.seed)
 
-
+    # predict
     if config.mode == "test":
         evaluator = PSEvaluator() if config.dataset.name == 'people_snapshot' else Evaluator()
         predict(config, evaluator=evaluator)
-    elif config.mode == "predict":  # 在未见的动作上预测
+    elif config.mode == "predict":
         predict(config, evaluator=None)
     else:
         raise ValueError(f"Unknown mode: {config.mode}")

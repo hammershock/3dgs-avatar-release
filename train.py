@@ -50,6 +50,7 @@ def training(config):
     model = config.model
     dataset = config.dataset
     opt = config.opt
+
     pipe = config.pipeline
     testing_iterations = config.test_iterations
     testing_interval = config.test_interval
@@ -259,7 +260,6 @@ def validation(iteration, testing_iterations, testing_interval, scene : Scene, e
                 image = torch.clamp(render_pkg["render"], 0.0, 1.0)
                 gt_image = torch.clamp(data.original_image.to("cuda"), 0.0, 1.0)
                 opacity_image = torch.clamp(render_pkg["opacity_render"], 0.0, 1.0)
-
 
                 wandb_img = wandb.Image(opacity_image[None],
                                         caption=config['name'] + "_view_{}/render_opacity".format(data.image_name))

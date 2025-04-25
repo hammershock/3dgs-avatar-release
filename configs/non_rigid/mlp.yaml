@@ -18,7 +18,7 @@ model:
         num_joints: 24
         rel_joints: false
         dim_per_joint: 6
-        out_dim: -1
+        out_dim: -1  # 不使用线性输出层
       mlp:
         n_neurons: 256
         n_hidden_layers: 8

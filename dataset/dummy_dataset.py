@@ -209,22 +209,6 @@ class DummyDataset:
         return smpl_data
 
     def _get_camera(self, idx, data_dict=None):
-        """
-        body point -> train camera
-        body point @ R + t
-
-        world point(ArUco Marker) -> my camera
-
-        Place the body on Aruco Marker...
-        body point @ R + t
-
-        Args:
-            idx:
-            data_dict:
-
-        Returns:
-
-        """
         assert self.cap.isOpened()
         ret, frame = self.cap.read()
         assert ret
@@ -259,8 +243,8 @@ class DummyDataset:
 
         # camera RT
         R, _ = cv2.Rodrigues(rvec)
-        # fx, fy = K[0, 0], K[1, 1]
-        # cx, cy = K[0, 2], K[1, 2]
+        fx, fy = K[0, 0], K[1, 1]
+        cx, cy = K[0, 2], K[1, 2]
 
         # M = np.eye(3)
         # M[0, 2] = (K[0, 2] - self.W / 2) / K[0, 0]
@@ -268,15 +252,9 @@ class DummyDataset:
         # K[0, 2] = self.W / 2
         # K[1, 2] = self.H / 2
         # R = M @ R
-        # T = M @ T
-        # #
-        # T = -np.transpose(R) @ tvec
         # T = tvec.flatten()
 
         R = np.transpose(R)
-        # # T = T[:, 0]
-        # T = T.flatten()
-        # T = tvec.reshape((1, 3))
         T = np.array([-1.0, 1.0, 4.0], dtype=np.float32) + tvec.flatten() * 3.0
         # T = np.array([0.0, 1.0, 4.0], dtype=np.float32)
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -291,14 +269,10 @@ class DummyDataset:
         image = torch.from_numpy(image).permute(2, 0, 1).float()  # (C, H, W)
         mask = torch.zeros_like(image)  # dummy mask
 
-        # K[0, :] *= self.w / self.W
-        # K[1, :] *= self.h / self.H
-        K[0, 0] *= 2
-        K[1, 1] *= 2
+        K[0, :] *= self.w / self.W
+        K[1, :] *= self.h / self.H
         fx, fy = K[0, 0], K[1, 1]
         FovX, FovY = focal2fov(fx, self.w), focal2fov(fy, self.h)
-        # 537.6245, 539.263
-        # todo:
         # Compute posed SMPL body
         minimal_shape = self.metadata['minimal_shape']  # (6890, 3)
         gender = self.metadata['gender']  # 'neutral'

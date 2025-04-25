@@ -117,13 +117,14 @@ def get_hannw_embedder(cfg, multires, iter_val,):
     return embed, embedder_obj.out_dim
 
 class HierarchicalPoseEncoder(nn.Module):
-    '''Hierarchical encoder from LEAP.'''
+    """Hierarchical encoder from LEAP."""
 
     def __init__(self, num_joints=24, rel_joints=False, dim_per_joint=6, out_dim=-1, **kwargs):
         super().__init__()
 
         self.num_joints = num_joints
         self.rel_joints = rel_joints
+        # hard-coded
         self.ktree_parents = np.array([-1,  0,  0,  0,  1,  2,  3,  4,  5,  6,  7,  8,
             9,  9,  9, 12, 13, 14, 16, 17, 18, 19, 20, 21], dtype=np.int32)
 
@@ -131,14 +132,16 @@ class HierarchicalPoseEncoder(nn.Module):
         dim_feat = 13 + dim_per_joint
 
         layers = []
-        for idx in range(num_joints):
-            layer = nn.Sequential(nn.Linear(dim_feat, dim_feat), nn.ReLU(), nn.Linear(dim_feat, dim_per_joint))
+        for _ in range(num_joints):
+            layer = nn.Sequential(nn.Linear(dim_feat, dim_feat),
+                                  nn.ReLU(),
+                                  nn.Linear(dim_feat, dim_per_joint))
 
             layers.append(layer)
 
         self.layers = nn.ModuleList(layers)
 
-        if out_dim <= 0:
+        if out_dim <= 0:  # 不使用线性层作为输出层
             self.out_layer = nn.Identity()
             self.n_output_dims = num_joints * dim_per_joint
         else:
@@ -189,6 +192,7 @@ class VanillaCondMLP(nn.Module):
         dims = [dim_in] + [self.n_neurons for _ in range(self.n_hidden_layers)] + [dim_out]
 
         self.embed_fn = None
+
         if config.multires > 0:
             embed_fn, input_ch = get_embedder(config.multires, input_dims=dim_in)
             self.embed_fn = embed_fn
@@ -338,3 +342,26 @@ class HashGrid(nn.Module):
         x = (x + 1.) * 0.5 # [-1, 1] => [0, 1]
 
         return self.encoding(x)
+
+
+if __name__ == '__main__':
+    class Config:
+        def __init__(self):
+            self.n_neurons = 128  # 每一层的神经元数目
+            self.n_hidden_layers = 4  # 隐藏层的层数
+            self.multires = 4  # 启用多重分辨率位置编码
+            self.skip_in = [1, 2]  # 指定哪些层使用跳跃连接
+            self.cond_in = [1, 3]  # 指定哪些层接收条件输入
+            self.last_layer_init = True  # 是否对最后一层进行特殊初始化
+
+        def get(self, key, default=None):
+            return getattr(self, key, default)
+
+
+    config = Config()
+    coords = torch.randn(10, 3)  # (10, dim_in)
+    cond = torch.randn(10, 5)  # (10, dim_cond)
+    model = VanillaCondMLP(dim_in=3, dim_cond=5, dim_out=1, config=config)
+    output = model(coords, cond)
+
+    print("模型输出：", output.shape)  #  (10, dim_out)

@@ -64,6 +64,8 @@ class CameraStream:
         self.cap = cv2.VideoCapture(self.camera_id)
         if not self.cap.isOpened():
             raise ValueError(f"Cannot open camera with id {self.camera_id}")
+        else:
+            print("Sucessfully opened camera with id {}".format(self.camera_id))
 
         # 获取相机的图像尺寸
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))

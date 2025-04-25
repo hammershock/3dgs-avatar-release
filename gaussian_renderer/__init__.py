@@ -11,8 +11,49 @@
 
 import math
 
+import cv2
+import numpy as np
 import torch
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+
+
+class RenderPackage:
+    deformed_gaussian: object
+    render: torch.Tensor
+    viewspace_points: object
+    visibility_filter: object
+    radii: object
+    loss_reg: object
+    opacity_render: object
+
+    def __init__(self, **data):
+        self.data = data
+
+    def __getitem__(self, item):
+        if item in self.data:
+            return self.data[item]
+        elif hasattr(self, item):
+            return getattr(self, item)
+        raise KeyError(item)
+
+    def __getattr__(self, item):
+        if item in self.data:
+            return self.data[item]
+        raise KeyError(item)
+
+    @property
+    def rendering_cv2(self):
+        frame = self.data["render"].cpu().numpy().transpose(1, 2, 0) * 255.0
+        frame = frame.astype(np.uint8)
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        return frame
+
+    @property
+    def background_mask(self):
+        if self.opacity_render is None:
+            return self.rendering_cv2 < 0.4
+        return (self.opacity_render == 0.0).squeeze(0).detach().cpu().numpy()
+
 
 
 def render(data,
@@ -30,7 +71,7 @@ def render(data,
     Background tensor (bg_color) must be on GPU!
     """
     pc, loss_reg, colors_precomp = scene.convert_gaussians(data, iteration, compute_loss)
-
+    # print(colors_precomp.shape)  # (18423, 3)  [0-1]
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
     try:
@@ -58,10 +99,9 @@ def render(data,
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
-    means3D = pc.get_xyz
-    means2D = screenspace_points
+    means3D = pc.get_xyz  # 高斯点中心位置
+    means2D = screenspace_points  # 投影位置
     opacity = pc.get_opacity
-
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
     scales = None
@@ -103,11 +143,11 @@ def render(data,
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
-    return {"deformed_gaussian": pc,
-            "render": rendered_image,
-            "viewspace_points": screenspace_points,
-            "visibility_filter": radii > 0,
-            "radii": radii,
-            "loss_reg": loss_reg,
-            "opacity_render": opacity_image,
-            }
+    return RenderPackage(deformed_gaussian=pc,
+                         render=rendered_image,
+                         viewspace_points=screenspace_points,
+                         visibility_filter=radii > 0,
+                         radii=radii,
+                         loss_reg=loss_reg,
+                         opacity_render=opacity_image,
+                         )

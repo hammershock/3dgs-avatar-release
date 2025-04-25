@@ -52,37 +52,6 @@ def get_bbox(pt3ds, padding=0.):
 
 
 class ZJUMoCapDataset(Dataset):
-    """
-    ZJUMoCap dataset Class
-
-    This dataset provides
-    1. multi-view RGB images,
-    2. corresponding segmentation masks,
-    and SMPL-based 3D motion capture data for human shape and pose estimation tasks.
-    It is structured around a subject directory containing camera parameters,
-    model files (.npz format), and image/mask pairs, allowing for training,
-    validation, testing, and prediction splits.
-
-    data/
-    └── ZJUMoCap/
-        ├── CoreView_377/
-        │   ├── models/                    # 包含多帧的三维模型文件 (.npz)
-        │   ├── opt_models/                # 可选的优化模型文件
-        │   ├── cam_params.json            # 每个相机的内外参配置文件
-        │   ├── <camera_name_1>/           # 相机 1 的图像和蒙版文件
-        │   │   ├── *.jpg                  # RGB 图像文件
-        │   │   ├── *.png                  # 对应的分割蒙版
-        │   ├── <camera_name_2>/           # 相机 2 的图像和蒙版文件
-        │   │   ├── *.jpg                  # RGB 图像文件
-        │   │   ├── *.png                  # 对应的分割蒙版
-        ├── CoreView_378/
-        │   ├── models/
-        │   ├── opt_models/
-        │   ├── cam_params.json
-        │   ├── ...
-
-    """
-
     def __init__(self, cfg, split='train'):
         super().__init__()
         self.cfg = cfg
@@ -100,6 +69,7 @@ class ZJUMoCapDataset(Dataset):
         self.val_cams = cfg.val_views  # ['5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23']
         self.test_mode = cfg.test_mode  # 'view', 'video' or 'all'
         self.white_bg: bool = cfg.white_background  # background color
+
         self.H, self.W = 1024, 1024 # hardcoded size of ZJU-MoCap original images
         self.h, self.w = cfg.img_hw  # actual size we use to train our model...
 
@@ -215,6 +185,7 @@ class ZJUMoCapDataset(Dataset):
 
 
     def load_metadata(self):
+        print("data_path", self.model_files[0])
         metadata = self.get_cano_smpl_verts(self.model_files[0])
 
         if self.split != 'train':
@@ -254,7 +225,7 @@ class ZJUMoCapDataset(Dataset):
         T = np.matmul(skinning_weights, bone_transforms_02v.reshape([-1, 16])).reshape([-1, 4, 4])
         vertices = np.matmul(T[:, :3, :3], minimal_shape[..., np.newaxis]).squeeze(-1) + T[:, :3, -1]  # vertices in cano pose
         cano_mesh = trimesh.Trimesh(vertices=vertices.astype(np.float32), faces=self.faces)
-
+        # print("padding", self.cfg.padding)
         coord_min, coord_max = get_bbox(vertices, padding=self.cfg.padding)
 
         return {
@@ -369,11 +340,15 @@ class ZJUMoCapDataset(Dataset):
         model_dict = np.load(model_file)
         n_smpl_points = minimal_shape.shape[0]  # 6890
         trans = model_dict['trans'].astype(np.float32)  # (3, )
+        # print("trans", trans)
         bone_transforms = model_dict['bone_transforms'].astype(np.float32)  # (24, 4, 4)
+
         # Also get GT SMPL poses
         root_orient = model_dict['root_orient'].astype(np.float32)  # (3, )
-        pose_body = model_dict['pose_body'].astype(np.float32)  # (63, )
-        pose_hand = model_dict['pose_hand'].astype(np.float32)  # (6, )
+        pose_body = model_dict['pose_body'].astype(np.float32)  # (63, )  # (21, 3)
+        pose_hand = model_dict['pose_hand'].astype(np.float32)  # (6, )  # (2, 3)
+        # print("root orient", root_orient)
+
         # Jtr_posed = model_dict['Jtr_posed'].astype(np.float32)
         pose = np.concatenate([root_orient, pose_body, pose_hand], axis=-1)
         pose = Rotation.from_rotvec(pose.reshape([-1, 3]))
@@ -391,6 +366,7 @@ class ZJUMoCapDataset(Dataset):
 
         # canonical SMPL vertices without pose correction, to normalize joints
         center = np.mean(minimal_shape, axis=0)
+        # print("center: ", center)
 
         minimal_shape_centered = minimal_shape - center
 
@@ -425,9 +401,9 @@ class ZJUMoCapDataset(Dataset):
             image_name=f"c{int(cam_name):02d}_f{frame_idx if frame_idx >= 0 else -frame_idx - 1:06d}",
             data_device=self.cfg.data_device,
             # human params
-            rots=torch.from_numpy(pose_rot).float().unsqueeze(0),
-            Jtrs=torch.from_numpy(Jtr_norm).float().unsqueeze(0),
-            bone_transforms=torch.from_numpy(bone_transforms),
+            rots=torch.from_numpy(pose_rot).float().unsqueeze(0),  # *
+            Jtrs=torch.from_numpy(Jtr_norm).float().unsqueeze(0),  # *
+            bone_transforms=torch.from_numpy(bone_transforms),  # *
         )
 
     def __getitem__(self, idx) -> Camera:

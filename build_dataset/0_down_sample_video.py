@@ -1,3 +1,6 @@
+"""
+预处理，视频抽帧
+"""
 import cv2
 from tqdm.contrib import tenumerate
 
